@@ -1,0 +1,10 @@
+# Downloaded artifacts — never commit these
+apks/
+backups/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# python
+scripts/__pycache__

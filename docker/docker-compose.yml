@@ -1,0 +1,8 @@
+services:
+  test-downloads:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ../apks:/app/apks
+      - ../backups:/app/backups

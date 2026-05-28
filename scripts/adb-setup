@@ -1,0 +1,249 @@
+#!/bin/sh
+# adb_setup.sh — install APKs, push backups, create directories on the phone.
+# Requires: download.py to have been run first.
+# Run from repo root: ./scripts/adb_setup
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+APKS_DIR="$REPO_ROOT/apks"
+BACKUPS_DIR="$REPO_ROOT/backups"
+
+# ── Destination on phone ───────────────────────────────────────────────────
+PHONE_DOWNLOAD="/sdcard/Download"
+
+# ── Directories to create on the phone ────────────────────────────────────
+PHONE_DIRS="
+/sdcard/Download/DyomiSY
+/sdcard/Download/Gallery
+/sdcard/Download/GameSaves
+/sdcard/Download/Infinity
+/sdcard/Download/Mihon
+/sdcard/Download/Revanced
+/sdcard/Download/Twitter
+/sdcard/Download/Aegis
+/sdcard/Download/CustomDNS
+/sdcard/Download/LinkSheet
+/sdcard/Download/Mix
+/sdcard/Download/MihonPreview
+/sdcard/Download/Obtanium
+/sdcard/Download/Fonts
+/sdcard/Download/TachiyomiSY
+/sdcard/Download/FolderSync
+"
+
+# ── Colours ────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# ── Logging ────────────────────────────────────────────────────────────────
+log_info() { printf "${BLUE}[INFO]${RESET}  %s\n" "$*"; }
+log_ok() { printf "${GREEN}[OK]${RESET}    %s\n" "$*"; }
+log_warn() { printf "${YELLOW}[WARN]${RESET}  %s\n" "$*"; }
+log_error() { printf "${RED}[ERROR]${RESET} %s\n" "$*" >&2; }
+log_section() { printf "\n${BOLD}==> %s${RESET}\n" "$*"; }
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+check_adb() {
+	if ! command -v adb >/dev/null 2>&1; then
+		log_error "adb not found — install Android Platform Tools first"
+		return 1
+	fi
+	log_ok "adb found"
+	return 0
+}
+
+check_device() {
+	log_section "Device check"
+	if ! adb get-state >/dev/null 2>&1; then
+		log_error "No device detected — pair your phone first:"
+		log_error "  adb pair <ip>:<port>"
+		return 1
+	fi
+	model=$(adb shell getprop ro.product.model 2>/dev/null | tr -d '\r')
+	log_ok "Connected: $model"
+	return 0
+}
+
+check_local_file() {
+	path="$1"
+	if [ ! -f "$path" ] || [ ! -s "$path" ]; then
+		log_error "File missing or empty: $path"
+		log_error "Run 'python3 scripts/download.py' first"
+		return 1
+	fi
+	return 0
+}
+
+install_apk() {
+	apk_path="$1"
+	label="$2"
+	log_section "Installing $label"
+
+	check_local_file "$apk_path"
+	result=$?
+	if [ "$result" -ne 0 ]; then
+		return 1
+	fi
+
+	if adb install -r "$apk_path"; then
+		log_ok "$label installed"
+		return 0
+	else
+		log_error "Failed to install $label"
+		return 1
+	fi
+}
+
+push_file() {
+	src="$1"
+	dest_dir="$2"
+	label="$3"
+	log_info "Pushing $label → $dest_dir"
+
+	check_local_file "$src"
+	result=$?
+	if [ "$result" -ne 0 ]; then
+		return 1
+	fi
+
+	if adb push "$src" "$dest_dir/$(basename "$src")"; then
+		log_ok "Pushed: $label"
+		return 0
+	else
+		log_error "Failed to push: $label"
+		return 1
+	fi
+}
+
+create_phone_dir() {
+	path="$1"
+	if adb shell mkdir -p "$path" >/dev/null 2>&1; then
+		log_ok "Created: $path"
+		return 0
+	else
+		log_error "Failed to create: $path"
+		return 1
+	fi
+}
+
+# ── Steps ──────────────────────────────────────────────────────────────────
+
+# Find latest file matching a glob pattern in a directory
+find_file() {
+	dir="$1"
+	pattern="$2"
+	found=$(find "$dir" -maxdepth 1 -name "$pattern" 2>/dev/null | sort | tail -1)
+	printf "%s" "$found"
+}
+
+step_install_apks() {
+	log_section "Installing APKs"
+	errors=0
+
+	shizuku_apk=$(find_file "$APKS_DIR" "shizuku-*-release.apk")
+	install_apk "$shizuku_apk" "Shizuku"
+	errors=$((errors + $?))
+
+	obtanium_apk=$(find_file "$APKS_DIR" "app-arm64-v8a-release.apk")
+	if [ -z "$obtanium_apk" ]; then
+		obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
+	fi
+	install_apk "$obtanium_apk" "Obtanium"
+	errors=$((errors + $?))
+
+	return $errors
+}
+
+step_push_files() {
+	log_section "Pushing files to $PHONE_DOWNLOAD"
+	errors=0
+
+	shizuku_apk=$(find_file "$APKS_DIR" "shizuku-*-release.apk")
+	push_file "$shizuku_apk" "$PHONE_DOWNLOAD" "shizuku apk"
+	errors=$((errors + $?))
+
+	obtanium_apk=$(find_file "$APKS_DIR" "app-arm64-v8a-release.apk")
+	if [ -z "$obtanium_apk" ]; then
+		obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
+	fi
+	push_file "$obtanium_apk" "$PHONE_DOWNLOAD" "obtanium apk"
+	errors=$((errors + $?))
+
+	obtanium_backup=$(find_file "$BACKUPS_DIR" "obtainium-export-*.json")
+	push_file "$obtanium_backup" "$PHONE_DOWNLOAD" "obtanium backup"
+	errors=$((errors + $?))
+
+	foldersync_backup=$(find_file "$BACKUPS_DIR" "*foldersync.db.zip")
+	push_file "$foldersync_backup" "$PHONE_DOWNLOAD" "foldersync backup"
+	errors=$((errors + $?))
+
+	return $errors
+}
+
+step_create_dirs() {
+	log_section "Creating directories on phone"
+	errors=0
+
+	printf "%s\n" "$PHONE_DIRS" | while IFS= read -r dir; do
+		[ -z "$dir" ] && continue
+		create_phone_dir "$dir"
+	done
+
+	return $errors
+}
+
+print_next_steps() {
+	log_section "Done — next steps on your phone"
+	printf "  1. Open Shizuku → pair via Wireless Debugging → tap Start\n"
+	printf "  2. Open FolderSync → Settings → Backup → Restore\n"
+	printf "     Select the foldersync.db.zip file from: %s\n" "$PHONE_DOWNLOAD"
+	printf "  3. Run all FolderSync sync pairs\n"
+	printf "  4. Open Obtanium → Import/Export → Import\n"
+	printf "     Select the obtainium-export-*.json file from: %s\n" "$PHONE_DOWNLOAD"
+	printf "  5. Batch install all apps in Obtanium (Shizuku must be running)\n"
+}
+
+# ── Main ───────────────────────────────────────────────────────────────────
+
+main() {
+	log_section "Android setup — ADB phase"
+	total_errors=0
+
+	check_adb
+	if [ $? -ne 0 ]; then
+		log_error "Aborting: adb not available"
+		return 1
+	fi
+
+	check_device
+	if [ $? -ne 0 ]; then
+		log_error "Aborting: no device connected"
+		return 1
+	fi
+
+	step_install_apks
+	total_errors=$((total_errors + $?))
+
+	step_push_files
+	total_errors=$((total_errors + $?))
+
+	step_create_dirs
+	total_errors=$((total_errors + $?))
+
+	if [ "$total_errors" -eq 0 ]; then
+		print_next_steps
+		log_ok "ADB setup completed successfully"
+	else
+		log_error "$total_errors step(s) failed — review errors above"
+	fi
+
+	return $total_errors
+}
+
+main
