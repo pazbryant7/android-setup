@@ -12,8 +12,8 @@ default:
 
 # Build the Docker image and run the download test
 test:
-    docker compose -f docker/compose.yml up --build
-    docker compose -f docker/compose.yml down
+    docker compose -f docker/docker-compose.yml up --build
+    docker compose -f docker/docker-compose.yml down
 
 # ── Downloads ─────────────────────────────────────────────────────────────────
 
