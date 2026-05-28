@@ -5,23 +5,39 @@ download.py — fetch latest APKs from GitHub and backups from pCloud.
 Run from repo root:
     python3 scripts/download.py
 
-All files are saved under their original upstream names:
-    apks/   shizuku-v<version>-release.apk
-            app-arm64-v8a-release.apk
+Files are saved under their original upstream names:
+    apks/    shizuku-v<version>-release.apk
+             app-arm64-v8a-release.apk
+             MiXplorer_v<version>-BETA_B<build>.apk
     backups/ obtainium-export-<timestamp>-auto.json
-             <date> - foldersync.db.zip
+             <date> - foldersync.db          ← extracted from the zip
+    tools/   uad-ng-linux                    ← desktop binary, chmod +x
+
+Skip logic
+──────────
+• GitHub APKs / UAD-NG: the remote filename encodes the version (e.g.
+  shizuku-v13.5.0-release.apk).  If that exact file already exists locally
+  and is non-empty we skip the download — no re-fetch needed.
+• MiXplorer: same — the build number is in the filename; skip if present.
+• Backups (Obtanium / FolderSync): timestamps change on every export, so
+  we always fetch the latest and never skip them.
 """
 
+import re
 import sys
+import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from lib import (
+    already_downloaded,
     download_file,
+    extract_archive,
     github_asset_url,
     log_error,
+    log_info,
     log_ok,
     log_section,
     log_warn,
@@ -32,9 +48,10 @@ from lib import (
 
 APKS_DIR = REPO_ROOT / "apks"
 BACKUPS_DIR = REPO_ROOT / "backups"
+TOOLS_DIR = REPO_ROOT / "tools"
 
 SHIZUKU_REPO = "RikkaApps/Shizuku"
-SHIZUKU_APK_PATTERN = "shizuku-"  # matches shizuku-v13.x.x...-release.apk
+SHIZUKU_APK_PATTERN = "shizuku-"
 SHIZUKU_APK_EXCLUDE = ""
 
 OBTANIUM_REPO = "ImranR98/Obtainium"
@@ -42,11 +59,17 @@ OBTANIUM_APK_PATTERN = "app-arm64-v8a-release.apk"
 OBTANIUM_APK_EXCLUDE = "fdroid"
 OBTANIUM_APK_FALLBACK = "app-release.apk"
 
+MIXPLORER_BETA_URL = "https://mixplorer.com/beta/"
+MIXPLORER_APK_PATTERN = "MiXplorer_"
+
+UADNG_REPO = "Universal-Debloater-Alliance/universal-android-debloater-next-generation"
+UADNG_ASSET_PATTERN = "uad-ng-linux"
+UADNG_ASSET_EXCLUDE = "checksum"  # skip the .checksum sidecar files
+
 PCLOUD_OBTANIUM_CODE = "kZNVmI5ZFByIzeOIGNHBxuJhhO6GJpw5tWGk"
 PCLOUD_FOLDERSYNC_CODE = "kZkxYI5ZafGQ9nFsLR0cxk1SfXSwaHEUWaFV"
 OBTANIUM_BACKUP_PATTERN = "obtainium-export"
 FOLDERSYNC_BACKUP_PATTERN = "foldersync.db.zip"
-
 
 # ── Individual download tasks ─────────────────────────────────────────────────
 
@@ -62,7 +85,10 @@ def download_shizuku() -> bool:
         return False
 
     url, filename = result
-    return download_file(url, APKS_DIR / filename)
+    dest = APKS_DIR / filename
+    if already_downloaded(dest):
+        return True
+    return download_file(url, dest)
 
 
 def download_obtanium() -> bool:
@@ -79,10 +105,63 @@ def download_obtanium() -> bool:
         return False
 
     url, filename = result
-    return download_file(url, APKS_DIR / filename)
+    dest = APKS_DIR / filename
+    if already_downloaded(dest):
+        return True
+    return download_file(url, dest)
+
+
+def download_mixplorer() -> bool:
+    """
+    Scrape mixplorer.com/beta/ and download the latest MiXplorer APK by date.
+    The page lists files with 'Last modified' dates — we pick the newest one
+    whose filename starts with MIXPLORER_APK_PATTERN.
+    Skip if the exact filename already exists locally.
+    """
+    log_section("MiXplorer APK")
+
+    headers = {"User-Agent": "android-setup/1.0"}
+    try:
+        req = urllib.request.Request(MIXPLORER_BETA_URL, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        log_error(f"Could not fetch MiXplorer beta page: {exc}")
+        return False
+
+    # Each entry on the page looks like:
+    #   <a href="MiXplorer_vX.Y.Z-BETA_BXXXXXXXX.apk">…Last modified: <date>…</a>
+    pattern = re.compile(
+        r'href="(' + re.escape(MIXPLORER_APK_PATTERN) + r'[^"]+\.apk)"'
+        r'.*?Last modified:\s*([^<"]+)',
+        re.DOTALL | re.IGNORECASE,
+    )
+    matches = pattern.findall(html)
+    if not matches:
+        log_error(
+            "No MiXplorer APK entries found on the beta page "
+            "— page layout may have changed"
+        )
+        return False
+
+    # Page lists newest first; also do a string-compare as a safety net.
+    latest_filename, latest_date = matches[0]
+    for fname, dstr in matches[1:]:
+        if dstr.strip() > latest_date.strip():
+            latest_filename, latest_date = fname, dstr
+
+    log_info(f"Latest MiXplorer: {latest_filename} (modified {latest_date.strip()})")
+
+    dest = APKS_DIR / latest_filename
+    if already_downloaded(dest):
+        return True
+
+    url = MIXPLORER_BETA_URL + latest_filename
+    return download_file(url, dest)
 
 
 def download_obtanium_backup() -> bool:
+    # Always fetch — backup filenames are timestamped, latest is always newer.
     log_section("Obtanium backup")
 
     result = pcloud_latest_file(PCLOUD_OBTANIUM_CODE, OBTANIUM_BACKUP_PATTERN)
@@ -95,6 +174,17 @@ def download_obtanium_backup() -> bool:
 
 
 def download_foldersync_backup() -> bool:
+    """
+    Download the FolderSync backup archive and extract its contents into
+    BACKUPS_DIR so the raw database file (not the archive) is what gets pushed
+    to the phone.
+
+    Always fetch — backup filenames are timestamped, latest is always newer.
+
+    If the upstream format ever changes from .zip to .rar / .tar.gz / etc.:
+      1. Update FOLDERSYNC_BACKUP_PATTERN above to match the new filename.
+      2. Add the extractor to ARCHIVE_EXTRACTORS in lib.py if not already there.
+    """
     log_section("FolderSync backup")
 
     result = pcloud_latest_file(PCLOUD_FOLDERSYNC_CODE, FOLDERSYNC_BACKUP_PATTERN)
@@ -103,7 +193,61 @@ def download_foldersync_backup() -> bool:
         return False
 
     url, filename = result
-    return download_file(url, BACKUPS_DIR / filename)
+    archive_path = BACKUPS_DIR / filename
+
+    if not download_file(url, archive_path):
+        return False
+
+    extracted = extract_archive(archive_path, BACKUPS_DIR)
+    if extracted is None:
+        log_error("FolderSync archive extraction failed")
+        return False
+
+    try:
+        archive_path.unlink()
+        log_info(f"Removed archive: {filename}")
+    except OSError as exc:
+        log_warn(f"Could not remove archive {filename}: {exc}")
+
+    return True
+
+
+def download_uadng() -> bool:
+    """
+    Download the UAD-NG Linux binary into tools/ and make it executable.
+    This is a desktop tool — it is NOT pushed to the phone.
+    Skip if the exact versioned filename already exists locally.
+    """
+    log_section("UAD-NG — desktop debloat tool (Linux binary)")
+
+    result = github_asset_url(
+        UADNG_REPO, UADNG_ASSET_PATTERN, exclude=UADNG_ASSET_EXCLUDE
+    )
+    if result is None:
+        log_error("Could not resolve UAD-NG Linux binary URL")
+        return False
+
+    url, filename = result
+    dest = TOOLS_DIR / filename
+
+    if already_downloaded(dest):
+        # Still ensure the executable bit is set in case it was lost
+        _ensure_executable(dest)
+        return True
+
+    if not download_file(url, dest):
+        return False
+
+    _ensure_executable(dest)
+    return True
+
+
+def _ensure_executable(path: Path) -> None:
+    try:
+        path.chmod(path.stat().st_mode | 0o755)
+        log_ok(f"chmod +x: {path.name}")
+    except OSError as exc:
+        log_warn(f"Could not set executable bit on {path.name}: {exc}")
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -130,12 +274,15 @@ def print_summary(results: dict[str, bool]) -> None:
 def main() -> int:
     APKS_DIR.mkdir(parents=True, exist_ok=True)
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
 
     tasks = {
         "shizuku": download_shizuku,
         "obtanium": download_obtanium,
+        "mixplorer": download_mixplorer,
         "obtanium-backup": download_obtanium_backup,
         "foldersync-backup": download_foldersync_backup,
+        "uad-ng (desktop)": download_uadng,
     }
 
     results = {}

@@ -8,3 +8,4 @@ Thumbs.db
 
 # python
 scripts/__pycache__
+/tools/uad-ng-linux

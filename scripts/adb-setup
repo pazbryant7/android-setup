@@ -1,7 +1,7 @@
-#!/bin/sh
+#!/usr/bin/env sh
 # adb_setup.sh — install APKs, push backups, create directories on the phone.
 # Requires: download.py to have been run first.
-# Run from repo root: ./scripts/adb_setup
+# Run from repo root: ./scripts/adb_setup.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -11,6 +11,11 @@ BACKUPS_DIR="$REPO_ROOT/backups"
 
 # ── Destination on phone ───────────────────────────────────────────────────
 PHONE_DOWNLOAD="/sdcard/Download"
+
+# ── Package names — used to check if an app is already installed ───────────
+PKG_SHIZUKU="moe.shizuku.privileged.api"
+PKG_OBTANIUM="dev.imranr98.obtainium"
+PKG_MIXPLORER="com.mixplorer.silver"
 
 # ── Directories to create on the phone ────────────────────────────────────
 PHONE_DIRS="
@@ -38,11 +43,13 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 BOLD='\033[1m'
+DIM='\033[2m'
 RESET='\033[0m'
 
 # ── Logging ────────────────────────────────────────────────────────────────
 log_info() { printf "${BLUE}[INFO]${RESET}  %s\n" "$*"; }
 log_ok() { printf "${GREEN}[OK]${RESET}    %s\n" "$*"; }
+log_skip() { printf "${DIM}[SKIP]  %s${RESET}\n" "$*"; }
 log_warn() { printf "${YELLOW}[WARN]${RESET}  %s\n" "$*"; }
 log_error() { printf "${RED}[ERROR]${RESET} %s\n" "$*" >&2; }
 log_section() { printf "\n${BOLD}==> %s${RESET}\n" "$*"; }
@@ -80,15 +87,33 @@ check_local_file() {
 	return 0
 }
 
+# Return 0 (true) if the given package name is installed on the phone.
+apk_installed() {
+	pkg="$1"
+	result=$(adb shell pm list packages "$pkg" 2>/dev/null | tr -d '\r')
+	# pm list packages outputs "package:<name>" for each match
+	[ -n "$result" ]
+}
+
+# Return 0 (true) if the given path exists as a directory on the phone.
+phone_dir_exists() {
+	adb shell "[ -d '$1' ]" >/dev/null 2>&1
+}
+
 install_apk() {
 	apk_path="$1"
 	label="$2"
-	log_section "Installing $label"
+	pkg="$3" # package name for already-installed check (optional)
 
-	check_local_file "$apk_path"
-	result=$?
-	if [ "$result" -ne 0 ]; then
-		return 1
+	log_section "Installing $label"
+	check_local_file "$apk_path" || return 1
+
+	# Skip install if the package is already present on the device.
+	# We still use -r (replace) when we do install so a manual downgrade
+	# or re-run after a version bump works correctly.
+	if [ -n "$pkg" ] && apk_installed "$pkg"; then
+		log_skip "$label already installed ($pkg)"
+		return 0
 	fi
 
 	if adb install -r "$apk_path"; then
@@ -106,11 +131,7 @@ push_file() {
 	label="$3"
 	log_info "Pushing $label → $dest_dir"
 
-	check_local_file "$src"
-	result=$?
-	if [ "$result" -ne 0 ]; then
-		return 1
-	fi
+	check_local_file "$src" || return 1
 
 	if adb push "$src" "$dest_dir/$(basename "$src")"; then
 		log_ok "Pushed: $label"
@@ -123,6 +144,12 @@ push_file() {
 
 create_phone_dir() {
 	path="$1"
+
+	if phone_dir_exists "$path"; then
+		log_skip "Dir exists: $path"
+		return 0
+	fi
+
 	if adb shell mkdir -p "$path" >/dev/null 2>&1; then
 		log_ok "Created: $path"
 		return 0
@@ -132,9 +159,7 @@ create_phone_dir() {
 	fi
 }
 
-# ── Steps ──────────────────────────────────────────────────────────────────
-
-# Find latest file matching a glob pattern in a directory
+# Find the latest file matching a glob pattern in a local directory.
 find_file() {
 	dir="$1"
 	pattern="$2"
@@ -142,19 +167,23 @@ find_file() {
 	printf "%s" "$found"
 }
 
+# ── Steps ──────────────────────────────────────────────────────────────────
+
 step_install_apks() {
 	log_section "Installing APKs"
 	errors=0
 
 	shizuku_apk=$(find_file "$APKS_DIR" "shizuku-*-release.apk")
-	install_apk "$shizuku_apk" "Shizuku"
+	install_apk "$shizuku_apk" "Shizuku" "$PKG_SHIZUKU"
 	errors=$((errors + $?))
 
 	obtanium_apk=$(find_file "$APKS_DIR" "app-arm64-v8a-release.apk")
-	if [ -z "$obtanium_apk" ]; then
-		obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
-	fi
-	install_apk "$obtanium_apk" "Obtanium"
+	[ -z "$obtanium_apk" ] && obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
+	install_apk "$obtanium_apk" "Obtanium" "$PKG_OBTANIUM"
+	errors=$((errors + $?))
+
+	mixplorer_apk=$(find_file "$APKS_DIR" "MiXplorer_*.apk")
+	install_apk "$mixplorer_apk" "MiXplorer" "$PKG_MIXPLORER"
 	errors=$((errors + $?))
 
 	return $errors
@@ -164,22 +193,32 @@ step_push_files() {
 	log_section "Pushing files to $PHONE_DOWNLOAD"
 	errors=0
 
+	# ── APKs ──────────────────────────────────────────────────────────────
 	shizuku_apk=$(find_file "$APKS_DIR" "shizuku-*-release.apk")
 	push_file "$shizuku_apk" "$PHONE_DOWNLOAD" "shizuku apk"
 	errors=$((errors + $?))
 
 	obtanium_apk=$(find_file "$APKS_DIR" "app-arm64-v8a-release.apk")
-	if [ -z "$obtanium_apk" ]; then
-		obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
-	fi
+	[ -z "$obtanium_apk" ] && obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
 	push_file "$obtanium_apk" "$PHONE_DOWNLOAD" "obtanium apk"
 	errors=$((errors + $?))
 
+	mixplorer_apk=$(find_file "$APKS_DIR" "MiXplorer_*.apk")
+	push_file "$mixplorer_apk" "$PHONE_DOWNLOAD" "mixplorer apk"
+	errors=$((errors + $?))
+
+	# ── Backups ───────────────────────────────────────────────────────────
 	obtanium_backup=$(find_file "$BACKUPS_DIR" "obtainium-export-*.json")
 	push_file "$obtanium_backup" "$PHONE_DOWNLOAD" "obtanium backup"
 	errors=$((errors + $?))
 
-	foldersync_backup=$(find_file "$BACKUPS_DIR" "*foldersync.db.zip")
+	# FolderSync: download.py extracts the archive so the raw .db file is
+	# what lives in backups/ — push that directly, no zip on the phone.
+	foldersync_backup=$(find_file "$BACKUPS_DIR" "*.db")
+	if [ -z "$foldersync_backup" ]; then
+		foldersync_backup=$(find_file "$BACKUPS_DIR" "*foldersync*")
+		log_warn "Extracted FolderSync .db not found — pushing raw archive instead"
+	fi
 	push_file "$foldersync_backup" "$PHONE_DOWNLOAD" "foldersync backup"
 	errors=$((errors + $?))
 
@@ -188,25 +227,30 @@ step_push_files() {
 
 step_create_dirs() {
 	log_section "Creating directories on phone"
-	errors=0
 
+	# Run in a subshell; individual failures are logged inside create_phone_dir.
 	printf "%s\n" "$PHONE_DIRS" | while IFS= read -r dir; do
 		[ -z "$dir" ] && continue
 		create_phone_dir "$dir"
 	done
 
-	return $errors
+	return 0
 }
 
 print_next_steps() {
 	log_section "Done — next steps on your phone"
 	printf "  1. Open Shizuku → pair via Wireless Debugging → tap Start\n"
 	printf "  2. Open FolderSync → Settings → Backup → Restore\n"
-	printf "     Select the foldersync.db.zip file from: %s\n" "$PHONE_DOWNLOAD"
+	printf "     Select the foldersync .db file from: %s\n" "$PHONE_DOWNLOAD"
 	printf "  3. Run all FolderSync sync pairs\n"
 	printf "  4. Open Obtanium → Import/Export → Import\n"
 	printf "     Select the obtainium-export-*.json file from: %s\n" "$PHONE_DOWNLOAD"
 	printf "  5. Batch install all apps in Obtanium (Shizuku must be running)\n"
+	printf "  6. Open MiXplorer and configure your preferences\n"
+	printf "\n"
+	printf "  On your computer:\n"
+	printf "  • UAD-NG is ready at: tools/uad-ng-linux\n"
+	printf "    Run it while the phone is connected to debloat system apps.\n"
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────
@@ -215,17 +259,14 @@ main() {
 	log_section "Android setup — ADB phase"
 	total_errors=0
 
-	check_adb
-	if [ $? -ne 0 ]; then
+	check_adb || {
 		log_error "Aborting: adb not available"
 		return 1
-	fi
-
-	check_device
-	if [ $? -ne 0 ]; then
+	}
+	check_device || {
 		log_error "Aborting: no device connected"
 		return 1
-	fi
+	}
 
 	step_install_apks
 	total_errors=$((total_errors + $?))

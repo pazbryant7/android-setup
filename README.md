@@ -13,7 +13,8 @@ The setup is split into two phases:
 
 ```
 Computer
-  └── download.sh        → pulls latest APKs from GitHub + backups from pCloud
+  └── download.py        → pulls latest APKs from GitHub + mixplorer.com,
+  │                         backups from pCloud, UAD-NG binary for Linux
   └── adb_setup.sh       → installs APKs, pushes backups, creates dirs on phone
 
 Phone (manual)
@@ -21,6 +22,9 @@ Phone (manual)
   └── FolderSync restore + run syncs
   └── Obtanium restore + batch install
   └── xPass restore
+
+Computer (post-setup, optional)
+  └── tools/uad-ng-linux → debloat system apps via ADB (desktop GUI tool)
 ```
 
 ---
@@ -31,7 +35,7 @@ Phone (manual)
 | --------- | --------------------------------------------- |
 | `adb`     | Android Debug Bridge — communicate with phone |
 | `curl`    | Download files                                |
-| `python3` | Parse pCloud API responses                    |
+| `python3` | Parse pCloud API responses, scrape pages      |
 
 Install on Debian/Ubuntu: `sudo apt install adb curl python3`
 Install on macOS: `brew install android-platform-tools curl python3`
@@ -43,14 +47,15 @@ Install on macOS: `brew install android-platform-tools curl python3`
 ```
 android-setup/
 ├── scripts/
-│   ├── lib.sh          # Shared utilities, logging, helpers
-│   ├── download.sh     # Download APKs + backups
+│   ├── lib.py          # Shared utilities, logging, archive extraction helpers
+│   ├── download.py     # Download APKs + backups + desktop tools
 │   └── adb_setup.sh    # ADB install + push + create dirs
 ├── docker/
 │   ├── Dockerfile      # Minimal Alpine image for download testing
 │   └── compose.yml     # Docker Compose for easy test run
 ├── apks/               # Downloaded APKs (git-ignored)
-├── backups/            # Downloaded backups (git-ignored)
+├── backups/            # Downloaded backups, extracted (git-ignored)
+├── tools/              # Desktop tools: uad-ng-linux (git-ignored)
 └── .gitignore
 ```
 
@@ -68,18 +73,20 @@ cd android-setup
 chmod +x scripts/*.sh
 ```
 
-#### Step 2 — Download APKs and backups
+#### Step 2 — Download APKs, backups, and tools
 
 ```sh
-./scripts/download.sh
+python3 scripts/download.py
 ```
 
 This fetches:
 
-- `apks/shizuku.apk` — latest from [RikkaApps/Shizuku](https://github.com/RikkaApps/Shizuku)
-- `apks/obtanium.apk` — latest arm64 from [ImranR98/Obtainium](https://github.com/ImranR98/Obtainium)
-- `backups/obtanium-backup.json` — most recent export from your pCloud folder
-- `backups/foldersync-backup.db.zip` — most recent backup from your pCloud folder
+- `apks/shizuku-v*.apk` — latest from [RikkaApps/Shizuku](https://github.com/RikkaApps/Shizuku)
+- `apks/app-arm64-v8a-release.apk` — latest arm64 from [ImranR98/Obtainium](https://github.com/ImranR98/Obtainium)
+- `apks/MiXplorer_v*-BETA_B*.apk` — latest beta from [mixplorer.com/beta](https://mixplorer.com/beta/)
+- `backups/obtainium-export-*.json` — most recent export from your pCloud folder
+- `backups/foldersync.db` — extracted from the pCloud zip backup (archive is removed after extraction)
+- `tools/uad-ng-linux` — latest Linux binary from [UAD-NG](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation), made executable automatically
 
 #### Step 3 — Enable Wireless Debugging on the phone
 
@@ -98,15 +105,14 @@ adb devices  # confirm device shows as "device"
 #### Step 5 — Run the ADB setup
 
 ```sh
-./scripts/adb_setup
+./scripts/adb_setup.sh
 ```
 
 This does:
 
-- Installs Shizuku APK
-- Installs Obtanium APK
+- Installs Shizuku, Obtanium, and MiXplorer APKs
 - Creates required directories on the phone
-- Pushes both backups to `/sdcard/Download/backups/`
+- Pushes APKs, Obtanium backup JSON, and the extracted FolderSync `.db` to `/sdcard/Download/`
 
 ---
 
@@ -125,7 +131,7 @@ This does:
 
 1. Open **FolderSync**
 2. Go to **Settings → Backup → Restore**
-3. Select `foldersync-backup.db.zip` from `/sdcard/Download/backups/`
+3. Select `foldersync.db` from `/sdcard/Download/`
 4. Go to **Sync pairs** → run all pairs
 
 > All local directories were already created by `adb_setup.sh` so syncs should run cleanly.
@@ -134,8 +140,58 @@ This does:
 
 1. Open **Obtanium**
 2. Tap **Import/Export → Import**
-3. Select `obtanium-backup.json` from `/sdcard/Download/backups/`
+3. Select `obtainium-export-*.json` from `/sdcard/Download/`
 4. Tap **Install all** — Shizuku handles silent install
+
+#### Step 9 — Set up MiXplorer
+
+1. Open **MiXplorer** (already installed by `adb_setup.sh`)
+2. Configure your preferred view, themes, and cloud accounts
+
+---
+
+### Phase 3 — Computer (optional, post-setup)
+
+#### Step 10 — Debloat with UAD-NG
+
+UAD-NG is a desktop GUI that removes system bloatware from your phone over ADB — it does **not** install on the phone.
+
+```sh
+# Make sure your phone is still connected via ADB, then:
+./tools/uad-ng-linux
+```
+
+The binary was downloaded to `tools/uad-ng-linux` and made executable automatically by `download.py`.
+
+> UAD-NG fetches the latest package list on launch (requires internet). Use it to safely disable or uninstall manufacturer and carrier bloatware.
+
+---
+
+## Adding support for new backup archive formats
+
+`download.py` extracts FolderSync (and any future archive-based backup) using the
+`ARCHIVE_EXTRACTORS` registry in `scripts/lib.py`. It supports `.zip`, `.tar`,
+`.tar.gz`, `.tgz`, `.tar.bz2`, and `.tar.xz` out of the box.
+
+To add a new format (e.g. RAR):
+
+```python
+# In scripts/lib.py
+import rarfile  # pip install rarfile
+
+def _extract_rar(archive: Path, dest: Path) -> list[Path]:
+    with rarfile.RarFile(archive) as rf:
+        rf.extractall(dest)
+        return [dest / n for n in rf.namelist()]
+
+ARCHIVE_EXTRACTORS[".rar"] = _extract_rar
+```
+
+Then update `FOLDERSYNC_BACKUP_PATTERN` in `download.py` to match the new filename:
+
+```python
+FOLDERSYNC_BACKUP_PATTERN = "foldersync.db.rar"
+```
 
 ---
 
@@ -148,10 +204,10 @@ cd docker
 docker compose up --build
 ```
 
-Downloaded files will be placed in `apks/` and `backups/` (mounted as volumes). Inspect them after the run:
+Downloaded files will be placed in `apks/`, `backups/`, and `tools/` (mounted as volumes). Inspect them after the run:
 
 ```sh
-ls -lh ../apks/ ../backups/
+ls -lh ../apks/ ../backups/ ../tools/
 ```
 
 Or build and run manually:
@@ -161,6 +217,7 @@ docker build -f docker/Dockerfile -t android-setup-test .
 docker run --rm \
   -v "$(pwd)/apks:/app/apks" \
   -v "$(pwd)/backups:/app/backups" \
+  -v "$(pwd)/tools:/app/tools" \
   android-setup-test
 ```
 
@@ -168,10 +225,10 @@ docker run --rm \
 
 ## Customising directories
 
-Edit `PHONE_EXTRA_DIRS` in `scripts/adb_setup.sh` to match your FolderSync pair structure:
+Edit `PHONE_DIRS` in `scripts/adb_setup.sh` to match your FolderSync pair structure:
 
 ```sh
-PHONE_EXTRA_DIRS="
+PHONE_DIRS="
 /sdcard/Music
 /sdcard/Pictures
 /sdcard/DCIM
@@ -188,3 +245,4 @@ PHONE_EXTRA_DIRS="
 | ADB pair (step 4)           | Android requires a tap-to-confirm on the device — cannot be automated |
 | Shizuku start (step 6)      | Wireless debugging pairing requires UI interaction                    |
 | Restore backups (steps 7–9) | App UI required; no CLI interface available                           |
+| UAD-NG debloat (step 10)    | Requires manual review of packages before removal                     |

@@ -2,7 +2,8 @@
 lib.py — shared utilities for android-setup scripts.
 
 Covers: logging, file verification, retried downloads,
-GitHub release asset resolution, pCloud public folder resolution.
+GitHub release asset resolution, pCloud public folder resolution,
+archive extraction with a pluggable extractor registry.
 """
 
 import json
@@ -20,6 +21,7 @@ RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 YELLOW = "\033[1;33m"
 BLUE = "\033[0;34m"
+DIM = "\033[2m"
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -31,6 +33,10 @@ def log_info(msg: str) -> None:
 
 def log_ok(msg: str) -> None:
     print(f"{GREEN}[OK]{RESET}    {msg}")
+
+
+def log_skip(msg: str) -> None:
+    print(f"{DIM}[SKIP]  {msg}{RESET}")
 
 
 def log_warn(msg: str) -> None:
@@ -48,7 +54,7 @@ def log_section(msg: str) -> None:
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 
-def _http_get(url: str, retries: int = 3, delay: float = 2.0) -> bytes:
+def _http_get(url: str, retries: int = 3, delay: float = 2.0) -> bytes | None:
     """
     Fetch a URL, returning raw bytes.
     Retries on network/HTTP errors up to `retries` times.
@@ -85,13 +91,25 @@ def _http_get_json(url: str) -> dict | None:
 
 
 def verify_file(path: Path) -> bool:
-    """Return True if file exists and is non-empty, log error and return False otherwise."""
+    """Return True if file exists and is non-empty."""
     if not path.is_file() or path.stat().st_size == 0:
         log_error(f"File missing or empty: {path}")
         return False
     size_kb = path.stat().st_size // 1024
     log_ok(f"Verified: {path.name} ({size_kb} KB)")
     return True
+
+
+def already_downloaded(dest: Path) -> bool:
+    """
+    Return True if `dest` already exists and is non-empty, logging a skip
+    message.  Call this before download_file() to avoid redundant fetches.
+    """
+    if dest.is_file() and dest.stat().st_size > 0:
+        size_kb = dest.stat().st_size // 1024
+        log_skip(f"Already exists: {dest.name} ({size_kb} KB)")
+        return True
+    return False
 
 
 def download_file(url: str, dest: Path, retries: int = 3) -> bool:
@@ -123,6 +141,96 @@ def download_file(url: str, dest: Path, retries: int = 3) -> bool:
 
     log_error(f"Failed to download after {retries} attempts: {url}")
     return False
+
+
+# ── Archive extraction ────────────────────────────────────────────────────────
+#
+# ARCHIVE_EXTRACTORS maps a suffix to a callable:
+#
+#   extractor(archive_path: Path, dest_dir: Path) -> list[Path]
+#
+# It must return a list of the top-level extracted paths, or raise on failure.
+#
+# To add a new format (e.g. RAR), install the required library and append:
+#
+#   import rarfile
+#   def _extract_rar(archive: Path, dest: Path) -> list[Path]:
+#       with rarfile.RarFile(archive) as rf:
+#           rf.extractall(dest)
+#           return [dest / n for n in rf.namelist()]
+#   ARCHIVE_EXTRACTORS[".rar"] = _extract_rar
+#
+# Then update the relevant BACKUP_PATTERN in download.py to match the new name.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import tarfile
+import zipfile
+
+
+def _extract_zip(archive: Path, dest: Path) -> list[Path]:
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(dest)
+        return [dest / name for name in zf.namelist()]
+
+
+def _extract_tar(archive: Path, dest: Path) -> list[Path]:
+    with tarfile.open(archive) as tf:
+        tf.extractall(dest)
+        return [dest / m.name for m in tf.getmembers()]
+
+
+# Registry: suffix → extractor callable.
+# Add or override entries here to support more formats.
+ARCHIVE_EXTRACTORS: dict[str, callable] = {
+    ".zip": _extract_zip,
+    ".tar": _extract_tar,
+    ".tar.gz": _extract_tar,
+    ".tgz": _extract_tar,
+    ".tar.bz2": _extract_tar,
+    ".tar.xz": _extract_tar,
+    # ".rar": _extract_rar,   ← uncomment after: pip install rarfile
+    # ".7z":  _extract_7z,    ← uncomment after: pip install py7zr
+}
+
+
+def _archive_suffix(path: Path) -> str | None:
+    """
+    Return the registered archive suffix for `path`, or None if unrecognised.
+    Checks compound suffixes like '.tar.gz' before single ones.
+    """
+    name = path.name
+    for suffix in ARCHIVE_EXTRACTORS:
+        if name.endswith(suffix):
+            return suffix
+    return None
+
+
+def extract_archive(archive: Path, dest_dir: Path) -> list[Path] | None:
+    """
+    Extract `archive` into `dest_dir` using the registered extractor for its
+    format.  Returns the list of extracted paths on success, or None on failure.
+
+    To support a new format add an entry to ARCHIVE_EXTRACTORS (see above).
+    """
+    suffix = _archive_suffix(archive)
+    if suffix is None:
+        log_error(
+            f"No extractor registered for '{archive.suffix}'. "
+            f"Add one to ARCHIVE_EXTRACTORS in lib.py. "
+            f"Supported: {', '.join(ARCHIVE_EXTRACTORS)}"
+        )
+        return None
+
+    extractor = ARCHIVE_EXTRACTORS[suffix]
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        paths = extractor(archive, dest_dir)
+        log_ok(f"Extracted {archive.name} → {dest_dir} ({len(paths)} item(s))")
+        return paths
+    except Exception as exc:
+        log_error(f"Failed to extract {archive.name}: {exc}")
+        return None
 
 
 # ── GitHub release helpers ────────────────────────────────────────────────────
