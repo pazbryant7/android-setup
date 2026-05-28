@@ -12,29 +12,24 @@ BACKUPS_DIR="$REPO_ROOT/backups"
 # ── Destination on phone ───────────────────────────────────────────────────
 PHONE_DOWNLOAD="/sdcard/Download"
 
-# ── Package names — used to check if an app is already installed ───────────
-PKG_SHIZUKU="moe.shizuku.privileged.api"
-PKG_OBTANIUM="dev.imranr98.obtainium"
-PKG_MIXPLORER="com.mixplorer.silver"
-
 # ── Directories to create on the phone ────────────────────────────────────
 PHONE_DIRS="
-/sdcard/Download/DyomiSY
-/sdcard/Download/Gallery
-/sdcard/Download/GameSaves
-/sdcard/Download/Infinity
-/sdcard/Download/Mihon
-/sdcard/Download/Revanced
-/sdcard/Download/Twitter
-/sdcard/Download/Aegis
-/sdcard/Download/CustomDNS
-/sdcard/Download/LinkSheet
-/sdcard/Download/Mix
-/sdcard/Download/MihonPreview
-/sdcard/Download/Obtanium
-/sdcard/Download/Fonts
-/sdcard/Download/TachiyomiSY
-/sdcard/Download/FolderSync
+/sdcard/DyomiSY
+/sdcard/Gallery
+/sdcard/GameSaves
+/sdcard/Infinity
+/sdcard/Mihon
+/sdcard/Revanced
+/sdcard/Twitter
+/sdcard/Aegis
+/sdcard/CustomDNS
+/sdcard/LinkSheet
+/sdcard/Mix
+/sdcard/MihonPreview
+/sdcard/Obtanium
+/sdcard/Fonts
+/sdcard/TachiyomiSY
+/sdcard/FolderSync
 "
 
 # ── Colours ────────────────────────────────────────────────────────────────
@@ -87,34 +82,12 @@ check_local_file() {
 	return 0
 }
 
-# Return 0 (true) if the given package name is installed on the phone.
-apk_installed() {
-	pkg="$1"
-	result=$(adb shell pm list packages "$pkg" 2>/dev/null | tr -d '\r')
-	# pm list packages outputs "package:<name>" for each match
-	[ -n "$result" ]
-}
-
-# Return 0 (true) if the given path exists as a directory on the phone.
-phone_dir_exists() {
-	adb shell "[ -d '$1' ]" >/dev/null 2>&1
-}
-
 install_apk() {
 	apk_path="$1"
 	label="$2"
-	pkg="$3" # package name for already-installed check (optional)
 
 	log_section "Installing $label"
 	check_local_file "$apk_path" || return 1
-
-	# Skip install if the package is already present on the device.
-	# We still use -r (replace) when we do install so a manual downgrade
-	# or re-run after a version bump works correctly.
-	if [ -n "$pkg" ] && apk_installed "$pkg"; then
-		log_skip "$label already installed ($pkg)"
-		return 0
-	fi
 
 	if adb install -r "$apk_path"; then
 		log_ok "$label installed"
@@ -143,18 +116,11 @@ push_file() {
 }
 
 create_phone_dir() {
-	path="$1"
-
-	if phone_dir_exists "$path"; then
-		log_skip "Dir exists: $path"
-		return 0
-	fi
-
-	if adb shell mkdir -p "$path" >/dev/null 2>&1; then
-		log_ok "Created: $path"
-		return 0
+	_path="$1"
+	if adb shell -n mkdir -p "$_path" >/dev/null 2>&1; then
+		log_ok "Created: $_path"
 	else
-		log_error "Failed to create: $path"
+		log_error "Failed to create: $_path"
 		return 1
 	fi
 }
@@ -174,16 +140,15 @@ step_install_apks() {
 	errors=0
 
 	shizuku_apk=$(find_file "$APKS_DIR" "shizuku-*-release.apk")
-	install_apk "$shizuku_apk" "Shizuku" "$PKG_SHIZUKU"
+	install_apk "$shizuku_apk" "Shizuku"
 	errors=$((errors + $?))
 
 	obtanium_apk=$(find_file "$APKS_DIR" "app-arm64-v8a-release.apk")
-	[ -z "$obtanium_apk" ] && obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
-	install_apk "$obtanium_apk" "Obtanium" "$PKG_OBTANIUM"
+	install_apk "$obtanium_apk" "Obtanium"
 	errors=$((errors + $?))
 
 	mixplorer_apk=$(find_file "$APKS_DIR" "MiXplorer_*.apk")
-	install_apk "$mixplorer_apk" "MiXplorer" "$PKG_MIXPLORER"
+	install_apk "$mixplorer_apk" "MiXplorer"
 	errors=$((errors + $?))
 
 	return $errors
@@ -193,20 +158,6 @@ step_push_files() {
 	log_section "Pushing files to $PHONE_DOWNLOAD"
 	errors=0
 
-	# ── APKs ──────────────────────────────────────────────────────────────
-	shizuku_apk=$(find_file "$APKS_DIR" "shizuku-*-release.apk")
-	push_file "$shizuku_apk" "$PHONE_DOWNLOAD" "shizuku apk"
-	errors=$((errors + $?))
-
-	obtanium_apk=$(find_file "$APKS_DIR" "app-arm64-v8a-release.apk")
-	[ -z "$obtanium_apk" ] && obtanium_apk=$(find_file "$APKS_DIR" "app-release.apk")
-	push_file "$obtanium_apk" "$PHONE_DOWNLOAD" "obtanium apk"
-	errors=$((errors + $?))
-
-	mixplorer_apk=$(find_file "$APKS_DIR" "MiXplorer_*.apk")
-	push_file "$mixplorer_apk" "$PHONE_DOWNLOAD" "mixplorer apk"
-	errors=$((errors + $?))
-
 	# ── Backups ───────────────────────────────────────────────────────────
 	obtanium_backup=$(find_file "$BACKUPS_DIR" "obtainium-export-*.json")
 	push_file "$obtanium_backup" "$PHONE_DOWNLOAD" "obtanium backup"
@@ -215,10 +166,12 @@ step_push_files() {
 	# FolderSync: download.py extracts the archive so the raw .db file is
 	# what lives in backups/ — push that directly, no zip on the phone.
 	foldersync_backup=$(find_file "$BACKUPS_DIR" "*.db")
+
 	if [ -z "$foldersync_backup" ]; then
 		foldersync_backup=$(find_file "$BACKUPS_DIR" "*foldersync*")
 		log_warn "Extracted FolderSync .db not found — pushing raw archive instead"
 	fi
+
 	push_file "$foldersync_backup" "$PHONE_DOWNLOAD" "foldersync backup"
 	errors=$((errors + $?))
 
