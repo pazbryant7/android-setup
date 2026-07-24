@@ -147,10 +147,6 @@ step_install_apks() {
 	install_apk "$obtanium_apk" "Obtanium"
 	errors=$((errors + $?))
 
-	mixplorer_apk=$(find_file "$APKS_DIR" "MiXplorer_*.apk")
-	install_apk "$mixplorer_apk" "MiXplorer"
-	errors=$((errors + $?))
-
 	return $errors
 }
 
@@ -199,7 +195,6 @@ print_next_steps() {
 	printf "  4. Open Obtanium → Import/Export → Import\n"
 	printf "     Select the obtainium-export-*.json file from: %s\n" "$PHONE_DOWNLOAD"
 	printf "  5. Batch install all apps in Obtanium (Shizuku must be running)\n"
-	printf "  6. Open MiXplorer and configure your preferences\n"
 	printf "\n"
 	printf "  On your computer:\n"
 	printf "  • UAD-NG is ready at: tools/uad-ng-linux\n"

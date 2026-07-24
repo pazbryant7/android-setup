@@ -8,7 +8,6 @@ Run from repo root:
 Files are saved under their original upstream names:
     apks/    shizuku-v<version>-release.apk
              app-arm64-v8a-release.apk
-             MiXplorer_v<version>-BETA_B<build>.apk
     backups/ obtainium-export-<timestamp>-auto.json
              <date> - foldersync.db          ← extracted from the zip
     tools/   uad-ng-linux                    ← desktop binary, chmod +x
@@ -18,7 +17,6 @@ Skip logic
 • GitHub APKs / UAD-NG: the remote filename encodes the version (e.g.
   shizuku-v13.5.0-release.apk).  If that exact file already exists locally
   and is non-empty we skip the download — no re-fetch needed.
-• MiXplorer: same — the build number is in the filename; skip if present.
 • Backups (Obtanium / FolderSync): timestamps change on every export, so
   we always fetch the latest and never skip them.
 """
@@ -58,9 +56,6 @@ OBTANIUM_REPO = "ImranR98/Obtainium"
 OBTANIUM_APK_PATTERN = "app-arm64-v8a-release.apk"
 OBTANIUM_APK_EXCLUDE = "fdroid"
 OBTANIUM_APK_FALLBACK = "app-release.apk"
-
-MIXPLORER_BETA_URL = "https://mixplorer.com/beta/"
-MIXPLORER_APK_PATTERN = "MiXplorer_"
 
 UADNG_REPO = "Universal-Debloater-Alliance/universal-android-debloater-next-generation"
 UADNG_ASSET_PATTERN = "uad-ng-linux"
@@ -109,56 +104,6 @@ def download_obtanium() -> bool:
     if already_downloaded(dest):
         return True
     return download_file(url, dest)
-
-
-def download_mixplorer() -> bool:
-    """
-    Scrape mixplorer.com/beta/ and download the latest MiXplorer APK by date.
-    The page lists files with 'Last modified' dates — we pick the newest one
-    whose filename starts with MIXPLORER_APK_PATTERN.
-    Skip if the exact filename already exists locally.
-    """
-    log_section("MiXplorer APK")
-
-    headers = {"User-Agent": "android-setup/1.0"}
-    try:
-        req = urllib.request.Request(MIXPLORER_BETA_URL, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-    except Exception as exc:
-        log_error(f"Could not fetch MiXplorer beta page: {exc}")
-        return False
-
-    # Each entry on the page looks like:
-    #   <a href="MiXplorer_vX.Y.Z-BETA_BXXXXXXXX.apk">…Last modified: <date>…</a>
-    pattern = re.compile(
-        r'href="(' + re.escape(MIXPLORER_APK_PATTERN) + r'[^"]+\.apk)"'
-        r'.*?Last modified:\s*([^<"]+)',
-        re.DOTALL | re.IGNORECASE,
-    )
-    matches = pattern.findall(html)
-    if not matches:
-        log_error(
-            "No MiXplorer APK entries found on the beta page "
-            "— page layout may have changed"
-        )
-        return False
-
-    # Page lists newest first; also do a string-compare as a safety net.
-    latest_filename, latest_date = matches[0]
-    for fname, dstr in matches[1:]:
-        if dstr.strip() > latest_date.strip():
-            latest_filename, latest_date = fname, dstr
-
-    log_info(f"Latest MiXplorer: {latest_filename} (modified {latest_date.strip()})")
-
-    dest = APKS_DIR / latest_filename
-    if already_downloaded(dest):
-        return True
-
-    url = MIXPLORER_BETA_URL + latest_filename
-    return download_file(url, dest)
-
 
 def download_obtanium_backup() -> bool:
     # Always fetch — backup filenames are timestamped, latest is always newer.
@@ -279,7 +224,6 @@ def main() -> int:
     tasks = {
         "shizuku": download_shizuku,
         "obtanium": download_obtanium,
-        "mixplorer": download_mixplorer,
         "obtanium-backup": download_obtanium_backup,
         "foldersync-backup": download_foldersync_backup,
         "uad-ng (desktop)": download_uadng,

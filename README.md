@@ -13,7 +13,7 @@ The setup is split into two phases:
 
 ```
 Computer
-  └── download.py        → pulls latest APKs from GitHub + mixplorer.com,
+  └── download.py        → pulls latest APKs from GitHub,
   │                         backups from pCloud, UAD-NG binary for Linux
   └── adb_setup.sh       → installs APKs, pushes backups, creates dirs on phone
 
@@ -83,7 +83,6 @@ This fetches:
 
 - `apks/shizuku-v*.apk` — latest from [RikkaApps/Shizuku](https://github.com/RikkaApps/Shizuku)
 - `apks/app-arm64-v8a-release.apk` — latest arm64 from [ImranR98/Obtainium](https://github.com/ImranR98/Obtainium)
-- `apks/MiXplorer_v*-BETA_B*.apk` — latest beta from [mixplorer.com/beta](https://mixplorer.com/beta/)
 - `backups/obtainium-export-*.json` — most recent export from your pCloud folder
 - `backups/foldersync.db` — extracted from the pCloud zip backup (archive is removed after extraction)
 - `tools/uad-ng-linux` — latest Linux binary from [UAD-NG](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation), made executable automatically
@@ -110,7 +109,7 @@ adb devices  # confirm device shows as "device"
 
 This does:
 
-- Installs Shizuku, Obtanium, and MiXplorer APKs
+- Installs Shizuku, Obtanium APKs
 - Creates required directories on the phone
 - Pushes APKs, Obtanium backup JSON, and the extracted FolderSync `.db` to `/sdcard/Download/`
 
@@ -143,16 +142,11 @@ This does:
 3. Select `obtainium-export-*.json` from `/sdcard/Download/`
 4. Tap **Install all** — Shizuku handles silent install
 
-#### Step 9 — Set up MiXplorer
-
-1. Open **MiXplorer** (already installed by `adb_setup.sh`)
-2. Configure your preferred view, themes, and cloud accounts
-
 ---
 
 ### Phase 3 — Computer (optional, post-setup)
 
-#### Step 10 — Debloat with UAD-NG
+#### Step 9 — Debloat with UAD-NG
 
 UAD-NG is a desktop GUI that removes system bloatware from your phone over ADB — it does **not** install on the phone.
 
