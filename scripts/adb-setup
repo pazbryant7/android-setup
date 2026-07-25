@@ -14,22 +14,26 @@ PHONE_DOWNLOAD="/sdcard/Download"
 
 # ── Directories to create on the phone ────────────────────────────────────
 PHONE_DIRS="
-/sdcard/DyomiSY
-/sdcard/Gallery
-/sdcard/GameSaves
-/sdcard/Infinity
-/sdcard/Mihon
-/sdcard/Revanced
-/sdcard/Twitter
+/sdcard/Mix
+/sdcard/Fonts
 /sdcard/Aegis
+/sdcard/Twitter
+/sdcard/Gallery
+/sdcard/Infinity
+/sdcard/Obtanium
+/sdcard/Revanced
+/sdcard/GameSaves
 /sdcard/CustomDNS
 /sdcard/LinkSheet
-/sdcard/Mix
-/sdcard/MihonPreview
-/sdcard/Obtanium
-/sdcard/Fonts
-/sdcard/TachiyomiSY
 /sdcard/FolderSync
+/sdcard/Mihon
+/sdcard/Mihon/autobackup
+/sdcard/DyomiSY
+/sdcard/DyomiSY/autobackup
+/sdcard/TachiyomiSY
+/sdcard/TachiyomiSY/autobackup
+/sdcard/MihonPreview
+/sdcard/MihonPreview/autobackup
 "
 
 # ── Colours ────────────────────────────────────────────────────────────────
