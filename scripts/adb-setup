@@ -53,7 +53,7 @@ log_section() { printf "\n${BOLD}==> %s${RESET}\n" "$*"; }
 
 check_adb() {
 	if ! command -v adb >/dev/null 2>&1; then
-		log_error "adb not found — install Android Platform Tools first"
+		log_error "adb not found"
 		return 1
 	fi
 	log_ok "adb found"
@@ -195,10 +195,6 @@ print_next_steps() {
 	printf "  4. Open Obtanium → Import/Export → Import\n"
 	printf "     Select the obtainium-export-*.json file from: %s\n" "$PHONE_DOWNLOAD"
 	printf "  5. Batch install all apps in Obtanium (Shizuku must be running)\n"
-	printf "\n"
-	printf "  On your computer:\n"
-	printf "  • UAD-NG is ready at: tools/uad-ng-linux\n"
-	printf "    Run it while the phone is connected to debloat system apps.\n"
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────

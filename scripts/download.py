@@ -10,13 +10,9 @@ Files are saved under their original upstream names:
              app-arm64-v8a-release.apk
     backups/ obtainium-export-<timestamp>-auto.json
              <date> - foldersync.db          ← extracted from the zip
-    tools/   uad-ng-linux                    ← desktop binary, chmod +x
 
 Skip logic
 ──────────
-• GitHub APKs / UAD-NG: the remote filename encodes the version (e.g.
-  shizuku-v13.5.0-release.apk).  If that exact file already exists locally
-  and is non-empty we skip the download — no re-fetch needed.
 • Backups (Obtanium / FolderSync): timestamps change on every export, so
   we always fetch the latest and never skip them.
 """
@@ -46,7 +42,6 @@ from lib import (
 
 APKS_DIR = REPO_ROOT / "apks"
 BACKUPS_DIR = REPO_ROOT / "backups"
-TOOLS_DIR = REPO_ROOT / "tools"
 
 SHIZUKU_REPO = "RikkaApps/Shizuku"
 SHIZUKU_APK_PATTERN = "shizuku-"
@@ -56,10 +51,6 @@ OBTANIUM_REPO = "ImranR98/Obtainium"
 OBTANIUM_APK_PATTERN = "app-arm64-v8a-release.apk"
 OBTANIUM_APK_EXCLUDE = "fdroid"
 OBTANIUM_APK_FALLBACK = "app-release.apk"
-
-UADNG_REPO = "Universal-Debloater-Alliance/universal-android-debloater-next-generation"
-UADNG_ASSET_PATTERN = "uad-ng-linux"
-UADNG_ASSET_EXCLUDE = "checksum"  # skip the .checksum sidecar files
 
 PCLOUD_OBTANIUM_CODE = "kZNVmI5ZFByIzeOIGNHBxuJhhO6GJpw5tWGk"
 PCLOUD_FOLDERSYNC_CODE = "kZkxYI5ZafGQ9nFsLR0cxk1SfXSwaHEUWaFV"
@@ -156,37 +147,6 @@ def download_foldersync_backup() -> bool:
 
     return True
 
-
-def download_uadng() -> bool:
-    """
-    Download the UAD-NG Linux binary into tools/ and make it executable.
-    This is a desktop tool — it is NOT pushed to the phone.
-    Skip if the exact versioned filename already exists locally.
-    """
-    log_section("UAD-NG — desktop debloat tool (Linux binary)")
-
-    result = github_asset_url(
-        UADNG_REPO, UADNG_ASSET_PATTERN, exclude=UADNG_ASSET_EXCLUDE
-    )
-    if result is None:
-        log_error("Could not resolve UAD-NG Linux binary URL")
-        return False
-
-    url, filename = result
-    dest = TOOLS_DIR / filename
-
-    if already_downloaded(dest):
-        # Still ensure the executable bit is set in case it was lost
-        _ensure_executable(dest)
-        return True
-
-    if not download_file(url, dest):
-        return False
-
-    _ensure_executable(dest)
-    return True
-
-
 def _ensure_executable(path: Path) -> None:
     try:
         path.chmod(path.stat().st_mode | 0o755)
@@ -219,14 +179,12 @@ def print_summary(results: dict[str, bool]) -> None:
 def main() -> int:
     APKS_DIR.mkdir(parents=True, exist_ok=True)
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
-    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
 
     tasks = {
         "shizuku": download_shizuku,
         "obtanium": download_obtanium,
         "obtanium-backup": download_obtanium_backup,
         "foldersync-backup": download_foldersync_backup,
-        "uad-ng (desktop)": download_uadng,
     }
 
     results = {}

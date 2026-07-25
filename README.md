@@ -14,7 +14,7 @@ The setup is split into two phases:
 ```
 Computer
   └── download.py        → pulls latest APKs from GitHub,
-  │                         backups from pCloud, UAD-NG binary for Linux
+  │                         backups from pCloud
   └── adb_setup.sh       → installs APKs, pushes backups, creates dirs on phone
 
 Phone (manual)
@@ -22,9 +22,6 @@ Phone (manual)
   └── FolderSync restore + run syncs
   └── Obtanium restore + batch install
   └── xPass restore
-
-Computer (post-setup, optional)
-  └── tools/uad-ng-linux → debloat system apps via ADB (desktop GUI tool)
 ```
 
 ---
@@ -38,7 +35,6 @@ Computer (post-setup, optional)
 | `python3` | Parse pCloud API responses, scrape pages      |
 
 Install on Debian/Ubuntu: `sudo apt install adb curl python3`
-Install on macOS: `brew install android-platform-tools curl python3`
 
 ---
 
@@ -48,14 +44,12 @@ Install on macOS: `brew install android-platform-tools curl python3`
 android-setup/
 ├── scripts/
 │   ├── lib.py          # Shared utilities, logging, archive extraction helpers
-│   ├── download.py     # Download APKs + backups + desktop tools
 │   └── adb_setup.sh    # ADB install + push + create dirs
 ├── docker/
 │   ├── Dockerfile      # Minimal Alpine image for download testing
 │   └── compose.yml     # Docker Compose for easy test run
 ├── apks/               # Downloaded APKs (git-ignored)
 ├── backups/            # Downloaded backups, extracted (git-ignored)
-├── tools/              # Desktop tools: uad-ng-linux (git-ignored)
 └── .gitignore
 ```
 
@@ -73,7 +67,7 @@ cd android-setup
 chmod +x scripts/*.sh
 ```
 
-#### Step 2 — Download APKs, backups, and tools
+#### Step 2 — Download APKs, backups
 
 ```sh
 python3 scripts/download.py
@@ -85,7 +79,6 @@ This fetches:
 - `apks/app-arm64-v8a-release.apk` — latest arm64 from [ImranR98/Obtainium](https://github.com/ImranR98/Obtainium)
 - `backups/obtainium-export-*.json` — most recent export from your pCloud folder
 - `backups/foldersync.db` — extracted from the pCloud zip backup (archive is removed after extraction)
-- `tools/uad-ng-linux` — latest Linux binary from [UAD-NG](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation), made executable automatically
 
 #### Step 3 — Enable Wireless Debugging on the phone
 
@@ -144,23 +137,6 @@ This does:
 
 ---
 
-### Phase 3 — Computer (optional, post-setup)
-
-#### Step 9 — Debloat with UAD-NG
-
-UAD-NG is a desktop GUI that removes system bloatware from your phone over ADB — it does **not** install on the phone.
-
-```sh
-# Make sure your phone is still connected via ADB, then:
-./tools/uad-ng-linux
-```
-
-The binary was downloaded to `tools/uad-ng-linux` and made executable automatically by `download.py`.
-
-> UAD-NG fetches the latest package list on launch (requires internet). Use it to safely disable or uninstall manufacturer and carrier bloatware.
-
----
-
 ## Adding support for new backup archive formats
 
 `download.py` extracts FolderSync (and any future archive-based backup) using the
@@ -198,10 +174,10 @@ cd docker
 docker compose up --build
 ```
 
-Downloaded files will be placed in `apks/`, `backups/`, and `tools/` (mounted as volumes). Inspect them after the run:
+Downloaded files will be placed in `apks/`, `backups/` (mounted as volumes). Inspect them after the run:
 
 ```sh
-ls -lh ../apks/ ../backups/ ../tools/
+ls -lh ../apks/ ../backups/
 ```
 
 Or build and run manually:
@@ -211,7 +187,6 @@ docker build -f docker/Dockerfile -t android-setup-test .
 docker run --rm \
   -v "$(pwd)/apks:/app/apks" \
   -v "$(pwd)/backups:/app/backups" \
-  -v "$(pwd)/tools:/app/tools" \
   android-setup-test
 ```
 
@@ -239,4 +214,3 @@ PHONE_DIRS="
 | ADB pair (step 4)           | Android requires a tap-to-confirm on the device — cannot be automated |
 | Shizuku start (step 6)      | Wireless debugging pairing requires UI interaction                    |
 | Restore backups (steps 7–9) | App UI required; no CLI interface available                           |
-| UAD-NG debloat (step 10)    | Requires manual review of packages before removal                     |
