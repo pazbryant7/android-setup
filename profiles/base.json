@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "required_apps": [
+    {
+      "id": "obtainium",
+      "name": "Obtainium",
+      "package_id": "dev.imranr.obtainium",
+      "architecture": "arm64-v8a",
+      "certificate_sha256": "b353601f6a1d5fd6603ae2f50be80cf301367b86b6ab8b1f66243da96cd57362",
+      "source": {
+        "provider": "github",
+        "repo": "ImranR98/Obtainium",
+        "asset_pattern": "app-arm64-v8a-release.apk",
+        "exclude": "fdroid"
+      }
+    },
+    {
+      "id": "brave",
+      "name": "Brave Browser",
+      "package_id": "com.brave.browser",
+      "architecture": "arm64-v8a",
+      "source": {
+        "provider": "fdroid",
+        "repo_url": "https://brave-browser-apk-release.s3.brave.com/fdroid/repo",
+        "package_id": "com.brave.browser"
+      }
+    },
+    {
+      "id": "mixplorer",
+      "name": "MiXplorer",
+      "package_id": "com.mixplorer",
+      "architecture": "arm64-v8a",
+      "certificate_sha256": "724eebd26a756e0762c255052e49709391baa21d17d98c34071e091f18b90063",
+      "source": {
+        "provider": "html",
+        "page_url": "https://mixplorer.com/beta/",
+        "asset_pattern": "MiXplorer_"
+      }
+    }
+  ]
+}

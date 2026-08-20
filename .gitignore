@@ -1,6 +1,10 @@
 # Downloaded artifacts — never commit these
 apks/
 backups/
+artifacts/
+
+# Per-profile private cloud links and tokens
+profiles/.secrets/
 
 # OS noise
 .DS_Store
@@ -9,3 +13,12 @@ Thumbs.db
 # python
 scripts/__pycache__
 /tools/uad-ng-linux
+
+# Python tooling
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/

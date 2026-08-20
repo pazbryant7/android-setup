@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "name": "personal",
+  "description": "Personal phone with the existing backup and directory workflow",
+  "apps": [
+    {
+      "id": "shizuku",
+      "name": "Shizuku",
+      "package_id": "moe.shizuku.privileged.api",
+      "architecture": "arm64-v8a",
+      "source": {
+        "provider": "github",
+        "repo": "RikkaApps/Shizuku",
+        "asset_pattern": "shizuku-",
+        "exclude": ""
+      }
+    }
+  ],
+  "directories": [
+    "/sdcard/Mix",
+    "/sdcard/Fonts",
+    "/sdcard/Aegis",
+    "/sdcard/Twitter",
+    "/sdcard/Gallery",
+    "/sdcard/Infinity",
+    "/sdcard/Obtanium",
+    "/sdcard/Revanced",
+    "/sdcard/GameSaves",
+    "/sdcard/CustomDNS",
+    "/sdcard/LinkSheet",
+    "/sdcard/FolderSync",
+    "/sdcard/Mihon",
+    "/sdcard/Mihon/autobackup",
+    "/sdcard/DyomiSY",
+    "/sdcard/DyomiSY/autobackup",
+    "/sdcard/TachiyomiSY",
+    "/sdcard/TachiyomiSY/autobackup",
+    "/sdcard/MihonPreview",
+    "/sdcard/MihonPreview/autobackup"
+  ],
+  "files": [
+    {
+      "id": "obtainium-backup",
+      "name": "Obtainium backup",
+      "destination": "/sdcard/Download",
+      "type": "json",
+      "source": {
+        "provider": "pcloud",
+        "secret_ref": "pcloud_obtainium_code",
+        "secret_field": "folder_code",
+        "pattern": "obtainium-export"
+      }
+    },
+    {
+      "id": "foldersync-backup",
+      "name": "FolderSync backup",
+      "destination": "/sdcard/Download",
+      "type": "zip",
+      "extract_member": "*.db",
+      "extract_type": "sqlite",
+      "source": {
+        "provider": "pcloud",
+        "secret_ref": "pcloud_foldersync_code",
+        "secret_field": "folder_code",
+        "pattern": "foldersync.db.zip"
+      }
+    }
+  ],
+  "instructions": [
+    "1. Open Shizuku, pair through Wireless Debugging, and tap Start.",
+    "2. Restore the FolderSync database from /sdcard/Download and run all sync pairs.",
+    "3. Import the Obtainium JSON from /sdcard/Download and install the remaining apps."
+  ]
+}

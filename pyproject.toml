@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "android-setup"
+version = "0.1.0"
+description = "Profile-based Android device provisioning"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.11",
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+android-setup = "android_setup.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["android_setup"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config"
+testpaths = ["tests"]
+markers = [
+  "integration: integration tests using local services",
+  "workflow: full CLI tests with fake providers and ADB",
+  "live: opt-in tests using public network providers",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["android_setup"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
