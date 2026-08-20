@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
-# Minimal image — only for testing downloads (no adb needed)
-FROM python:3.12-alpine
+FROM python:3.12-slim
 
 WORKDIR /app
+COPY pyproject.toml ./
+COPY src/ src/
+COPY profiles/ profiles/
+COPY tests/ tests/
+RUN python3 -m pip install --no-cache-dir '.[dev]'
 
-COPY scripts/lib.py      scripts/lib.py
-COPY scripts/download.py scripts/download.py
-
-CMD ["python3", "scripts/download.py"]
+CMD ["pytest", "-m", "not live", "tests"]

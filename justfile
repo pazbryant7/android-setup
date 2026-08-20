@@ -1,33 +1,54 @@
-# android-setup justfile
-# Install just: https://github.com/casey/just
+# android-setup task aliases
 
-apks_dir := "apks"
-backups_dir := "backups"
+set dotenv-load := false
 
-# List available recipes
 default:
     @just --list
 
-# ── Docker ────────────────────────────────────────────────────────────────────
+profiles:
+    PYTHONPATH=src python3 -m android_setup profiles list
 
-# Build the Docker image and run the download test
-test:
-    docker compose -f docker/docker-compose.yml up --build
-    docker compose -f docker/docker-compose.yml down
+profile-add name from="":
+    #!/usr/bin/env sh
+    set -eu
+    if [ -n "{{ from }}" ]; then
+        PYTHONPATH=src python3 -m android_setup profiles add "{{ name }}" --from "{{ from }}"
+    else
+        PYTHONPATH=src python3 -m android_setup profiles add "{{ name }}"
+    fi
 
-# ── Downloads ─────────────────────────────────────────────────────────────────
+profile-edit name:
+    PYTHONPATH=src python3 -m android_setup profiles edit "{{ name }}"
 
-# Download latest APKs and backups (skips if files already exist)
-download:
-    python3 scripts/download.py
+profile-remove name:
+    PYTHONPATH=src python3 -m android_setup profiles remove "{{ name }}"
 
-# Force redownload — removes existing apks and backups first
-redownload:
-    rm -rf {{ apks_dir }} {{ backups_dir }}
-    python3 scripts/download.py
+download profile:
+    PYTHONPATH=src python3 -m android_setup download "{{ profile }}"
 
-# ── ADB ───────────────────────────────────────────────────────────────────────
+verify profile:
+    PYTHONPATH=src python3 -m android_setup verify "{{ profile }}"
 
-# Run the full ADB setup (install APKs, push files, create dirs)
-setup: download
-    ./scripts/adb-setup
+setup profile *args:
+    PYTHONPATH=src python3 -m android_setup setup "{{ profile }}" {{ args }}
+
+check:
+    ruff format --check src tests
+    ruff check src tests
+    mypy src
+    PYTHONPATH=src python3 -m android_setup profiles validate
+
+test-unit:
+    PYTHONPATH=src pytest -m "not integration and not workflow and not live" tests
+
+test-integration:
+    PYTHONPATH=src pytest -m integration tests
+
+test-workflow:
+    PYTHONPATH=src pytest -m workflow tests
+
+test: check
+    PYTHONPATH=src pytest -m "not live" --cov=android_setup --cov-branch --cov-report=term-missing tests
+
+test-live:
+    ANDROID_SETUP_LIVE=1 PYTHONPATH=src pytest -m live -v tests/test_live.py

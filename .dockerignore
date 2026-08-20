@@ -1,0 +1,10 @@
+.git
+artifacts
+apks
+backups
+profiles/.secrets
+.coverage
+.mypy_cache
+.pytest_cache
+.ruff_cache
+__pycache__

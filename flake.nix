@@ -16,18 +16,28 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        python = pkgs.python312.withPackages (ps: [
+          ps.mypy
+          ps.pytest
+          ps.pytest-cov
+        ]);
       in
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             android-tools
             just
+            python
+            ruff
             typos
           ];
+
+          shellHook = ''
+            export PATH="${python}/bin:$PATH"
+          '';
         };
 
         formatter = pkgs.nixfmt-tree;
       }
     );
 }
-
