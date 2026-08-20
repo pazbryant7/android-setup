@@ -11,7 +11,7 @@ profiles/.secrets/
 Thumbs.db
 
 # python
-scripts/__pycache__
+__pycache__/
 /tools/uad-ng-linux
 
 # Python tooling
